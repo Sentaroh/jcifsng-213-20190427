@@ -529,7 +529,7 @@ public class NameServiceClientImpl implements Runnable, NameServiceClient {
         NameQueryRequest request = new NameQueryRequest(this.transportContext.getConfig(), name);
         NameQueryResponse response = new NameQueryResponse(this.transportContext.getConfig());
 
-        if ( addr != null ) { /*
+        if ( addr != null && addr!=this.baddr) { /*
                                * UniAddress calls always use this
                                * because it specifies addr
                                */
