@@ -24,6 +24,9 @@ import java.io.IOException;
 import java.net.MalformedURLException;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import jcifsng212.CIFSContext;
 import jcifsng212.CIFSException;
 import jcifsng212.dcerpc.ndr.NdrBuffer;
@@ -35,6 +38,7 @@ import jcifsng212.dcerpc.ndr.NdrException;
  * 
  */
 public abstract class DcerpcHandle implements DcerpcConstants, AutoCloseable {
+	private static final Logger log = LoggerFactory.getLogger(DcerpcHandle.class);
 
     /*
      * Bindings are in the form:
@@ -56,58 +60,78 @@ public abstract class DcerpcHandle implements DcerpcConstants, AutoCloseable {
         char[] arr = str.toCharArray();
         String proto = null, key = null;
         DcerpcBinding binding = null;
+        
+    	log.trace("str="+str);
 
-        state = mark = si = 0;
-        do {
-            char ch = arr[ si ];
-
-            switch ( state ) {
-            case 0:
-                if ( ch == ':' ) {
-                    proto = str.substring(mark, si);
-                    mark = si + 1;
-                    state = 1;
-                }
-                break;
-            case 1:
-                if ( ch == '\\' ) {
-                    mark = si + 1;
-                    break;
-                }
-                state = 2;
-            case 2:
-                if ( ch == '[' ) {
-                    String server = str.substring(mark, si).trim();
-                    if ( server.length() == 0 )
-                        server = "127.0.0.1";
-                    binding = new DcerpcBinding(proto, str.substring(mark, si));
-                    mark = si + 1;
-                    state = 5;
-                }
-                break;
-            case 5:
-                if ( ch == '=' ) {
-                    key = str.substring(mark, si).trim();
-                    mark = si + 1;
-                }
-                else if ( ch == ',' || ch == ']' ) {
-                    String val = str.substring(mark, si).trim();
-                    mark = si + 1;
-                    if ( key == null )
-                        key = "endpoint";
-                    if ( binding != null ) {
-                        binding.setOption(key, val);
-                    }
-                    key = null;
-                }
-                break;
-            default:
-                si = arr.length;
+        String str_body=str.substring(str.indexOf(":")+1);
+        if (str_body.startsWith("[")) {//IPV6 address  [IPV6 address][endpoint=\PIPE\srvsvc,address~IPV6 ADDRESS]
+            try {
+                String server="", val="";
+            	server=str_body.substring(0,str_body.indexOf("]")+1);
+            	String str_key_val=str_body.substring(str_body.indexOf("][")+2);
+            	key=str_key_val.substring(0, str_key_val.indexOf("="));
+            	String str_value=str_body.substring(str_body.indexOf("=")+1);
+            	val=str_value.substring(0, str_value.indexOf(","));
+                binding = new DcerpcBinding(proto, server);
+                binding.setOption(key, val);
+                log.trace("Server="+server+", key="+key+", val="+val);
+            } catch(Exception e) {
+            	log.error("parse error=", e);
             }
+        } else {
+            state = mark = si = 0;
+            do {
+                char ch = arr[ si ];
 
-            si++;
+                switch ( state ) {
+                case 0:
+                    if ( ch == ':' ) {
+                        proto = str.substring(mark, si);
+                        mark = si + 1;
+                        state = 1;
+                    }
+                    break;
+                case 1:
+                    if ( ch == '\\' ) {
+                        mark = si + 1;
+                        break;
+                    }
+                    state = 2;
+                case 2:
+                    if ( ch == '[' ) {
+                        String server = str.substring(mark, si).trim();
+                        if ( server.length() == 0 )
+                            server = "127.0.0.1";
+                        binding = new DcerpcBinding(proto, str.substring(mark, si));
+                        mark = si + 1;
+                        state = 5;
+                    }
+                    break;
+                case 5:
+                    if ( ch == '=' ) {
+                        key = str.substring(mark, si).trim();
+                        mark = si + 1;
+                    }
+                    else if ( ch == ',' || ch == ']' ) {
+                        String val = str.substring(mark, si).trim();
+                        mark = si + 1;
+                        if ( key == null )
+                            key = "endpoint";
+                        if ( binding != null ) {
+                            binding.setOption(key, val);
+                        }
+                        key = null;
+                    }
+                    break;
+                default:
+                    si = arr.length;
+                }
+
+                si++;
+            }
+            while ( si < arr.length );
+
         }
-        while ( si < arr.length );
 
         if ( binding == null || binding.getEndpoint() == null )
             throw new DcerpcException("Invalid binding URL: " + str);
